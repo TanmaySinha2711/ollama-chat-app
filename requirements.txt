@@ -2,3 +2,8 @@ ollama>=0.1.4
 streamlit>=1.29.0
 langchain>=0.1.0
 langchain-community>=0.0.10
+python-magic>=0.4.27
+python-magic-bin>=0.4.14; platform_system == "Windows"
+pypdf>=3.17.1
+python-docx>=1.0.0
+faiss-cpu>=1.7.4
