@@ -1,6 +1,7 @@
 import streamlit as st
 from backend import ChatBackend
 import re
+import os
 
 def initialize_session_state():
     if "messages" not in st.session_state:
@@ -84,41 +85,45 @@ def handle_chat_response(prompt, chat_backend):
         "content": prompt,
         "chat_id": st.session_state.current_chat_id
     }
-    
+
     # Add message to session state with chat_id
     st.session_state.messages.append(message)
     chat_backend.save_message(st.session_state.current_chat_id, "user", prompt)
-    
+
+    # Get document context if available
+    doc_context = st.session_state.get('uploaded_doc_text', '')
+    # We will pass doc_context separately, not append to the prompt string here
+
     with st.chat_message("user"):
-        st.markdown(prompt)
-    
+        st.markdown(prompt) # Display only the original user prompt
+
     with st.chat_message("assistant"):
         with st.spinner("Thinking..."):
-            # Pass messages with chat_id
-            response = chat_backend.get_response([message])
-            
+            # Pass messages and doc_context to backend
+            response = chat_backend.get_response([message], doc_context=doc_context)
+
             # Extract code blocks from markdown response
             code_blocks = re.findall(r'```(\w+)?\n(.*?)```', response, re.DOTALL)
-            
+
             # Display response with download buttons for code blocks
             current_pos = 0
             for idx, match in enumerate(re.finditer(r'```(\w+)?\n(.*?)```', response, re.DOTALL)):
                 # Display text before code block
                 st.markdown(response[current_pos:match.start()])
-                
+
                 lang = match.group(1) or 'txt'
                 code = match.group(2)
-                
+
                 # Create columns for code block and buttons
                 col1, col2, col3 = st.columns([10, 1, 1])
-                
+
                 with col1:
                     st.code(code, language=lang)
-                
+
                 with col2:
                     # Simplified copy button without session state
                     st.button("📋", key=f"copy_{idx}", help="Copy code")
-                
+
                 with col3:
                     # Get appropriate file extension
                     extension = {
@@ -147,7 +152,7 @@ def handle_chat_response(prompt, chat_backend):
                         'powershell': '.ps1',
                         'dockerfile': '.dockerfile',
                     }.get(lang.lower(), '.txt')
-                    
+
                     # Download button with unique key
                     st.download_button(
                         label="⬇️",
@@ -157,18 +162,18 @@ def handle_chat_response(prompt, chat_backend):
                         key=f"download_{idx}",
                         help=f"Download as chat_response{extension}"
                     )
-                
+
                 current_pos = match.end()
-            
+
             # Display any remaining text after last code block
             if current_pos < len(response):
                 st.markdown(response[current_pos:])
-            
+
             st.session_state.messages.append({"role": "assistant", "content": response})
             chat_backend.save_message(st.session_state.current_chat_id, "assistant", response)
-            
+
             if not st.session_state.title_generated:
-                title = chat_backend.generate_chat_title(prompt)
+                title = chat_backend.generate_chat_title(prompt) # Use original prompt for title
                 chat_backend.update_chat_title(st.session_state.current_chat_id, title)
                 st.session_state.title_generated = True
                 st.rerun()
@@ -180,6 +185,32 @@ def main():
     initialize_session_state()
     
     render_sidebar(chat_backend)
+    
+    # Add file uploader
+    uploaded_file = st.file_uploader("Upload a file", type=['txt', 'pdf', 'doc', 'docx'])
+    if uploaded_file is not None:
+        file_content = uploaded_file.read()
+        # Determine file type, mapping 'plain' to 'txt'
+        file_type_raw = uploaded_file.type.split('/')[-1]
+        file_type = 'txt' if file_type_raw == 'plain' else file_type_raw
+
+        # Save file to disk for processing
+        file_path = f"uploaded_files/{uploaded_file.name}"
+        with open(file_path, "wb") as f:
+            f.write(file_content)
+        # Process document
+        from document_processor import DocumentProcessor
+        processor = DocumentProcessor()
+        try:
+            extracted_text, vector_store_path = processor.process_document(file_path, file_type)
+            st.session_state['uploaded_doc_text'] = extracted_text
+            st.session_state['vector_store_path'] = vector_store_path
+            st.success(f"File {uploaded_file.name} uploaded and processed successfully!")
+        except Exception as e:
+            st.error(f"Failed to process file: {e}")
+        # Save document info to DB (optional, depending on whether you want to link messages to documents)
+        # document_id = chat_backend.save_document(uploaded_file.name, file_content, file_type)
+        # st.success(f"File {uploaded_file.name} uploaded successfully!")
     
     if st.session_state.current_chat_id is None:
         st.session_state.current_chat_id = chat_backend.create_new_chat()
@@ -194,4 +225,6 @@ def main():
         handle_chat_response(prompt, chat_backend)
 
 if __name__ == "__main__":
+    if not os.path.exists("uploaded_files"):
+        os.makedirs("uploaded_files")
     main()

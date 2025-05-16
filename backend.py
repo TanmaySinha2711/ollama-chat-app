@@ -63,38 +63,42 @@ class ChatBackend:
             print(f"Summarization error: {str(e)}")
             return "Previous conversation summary not available."
 
-    def get_response(self, messages):
+    def get_response(self, messages, doc_context=""):
         try:
             # Get chat_id from the current chat context
             chat_id = messages[0].get('chat_id') if messages else None
             if not chat_id:
                 raise ValueError("Chat ID not provided")
-            
+
             history = self._get_or_create_chat_history(chat_id)
-            
+
             # Get the latest user message
             latest_message = messages[-1]['content']
-            
-            # Add to history
+
+            # Add to history (only the user's original message)
             history.add_user_message(latest_message)
-            
-            # Create prompt template with history
+
+            # Create prompt template with history and optional document context
+            system_message_content = Config.SYSTEM_MESSAGE
+            if doc_context:
+                system_message_content += f"\n\nUse the following document context to answer the user's question:\n{doc_context[:4000]}" # Limit context size for model
+
             prompt = ChatPromptTemplate.from_messages([
-                ("system", "You are a helpful AI assistant specialized in coding."),
+                ("system", system_message_content),
                 MessagesPlaceholder(variable_name="chat_history"),
                 ("human", "{input}")
             ])
-            
+
             # Get response using the chat model
             chain = prompt | self.model
             response = chain.invoke({
                 "chat_history": history.messages[1:],  # Exclude system message
                 "input": latest_message
             })
-            
+
             # Add response to history
             history.add_ai_message(response.content)
-            
+
             return response.content
         except Exception as e:
             return f"Error: {str(e)}"
@@ -145,3 +149,12 @@ class ChatBackend:
 
     def delete_oldest_chat(self):
         self.db.delete_oldest_chat()
+
+    def save_document(self, filename, content, file_type):
+        return self.db.save_document(filename, content, file_type)
+    
+    def get_document(self, document_id):
+        return self.db.get_document(document_id)
+    
+    def save_message_with_document(self, chat_id, role, content, document_id=None):
+        self.db.save_message_with_document(chat_id, role, content, document_id)
