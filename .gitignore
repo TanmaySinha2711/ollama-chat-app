@@ -190,3 +190,7 @@ venv/
 
 # PyPI configuration file
 .pypirc
+
+# uploaded files
+uploaded_files/*
+vectors/*
