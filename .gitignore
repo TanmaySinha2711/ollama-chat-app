@@ -167,6 +167,24 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
+# Project specific
+chat_history.db
+*.db
+*.db-journal
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# Local development
+.DS_Store
+Thumbs.db
+
+# Virtual environment
+.venv/
+venv/
+.env/
+
 # Ruff stuff:
 .ruff_cache/
 
