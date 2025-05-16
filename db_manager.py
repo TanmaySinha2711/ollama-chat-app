@@ -1,6 +1,7 @@
 import sqlite3
 import json
 from datetime import datetime
+from config import Config
 
 class DatabaseManager:
     def __init__(self):
@@ -81,12 +82,19 @@ class DatabaseManager:
         messages = [{'role': role, 'content': content} for role, content in cursor.fetchall()]
         return messages
 
-    def get_recent_chats(self, limit=5):
+    def get_recent_chats(self, limit=None):
+        if limit is None:
+            limit = Config.RECENT_CHATS_DISPLAY
         cursor = self.conn.cursor()
         cursor.execute(
             'SELECT id, title, created_at, last_updated FROM chats ORDER BY last_updated DESC LIMIT ?',
             (limit,)
         )
+        return cursor.fetchall()
+
+    def get_all_chats(self):
+        cursor = self.conn.cursor()
+        cursor.execute('SELECT id, title, created_at, last_updated FROM chats ORDER BY last_updated DESC')
         return cursor.fetchall()
 
     def delete_chat(self, chat_id):
