@@ -4,16 +4,16 @@ from langchain.schema import HumanMessage, AIMessage, SystemMessage
 from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain.chains.summarize import load_summarize_chain
 from db_manager import DatabaseManager
+from config import Config
 
 class ChatBackend:
     def __init__(self):
-        self.model = ChatOllama(model="deepseek-coder-v2:16b")
+        self.model = ChatOllama(model=Config.DEFAULT_MODEL)
         self.db = DatabaseManager()
-        self.chat_histories = {}  # Store chat histories by chat_id
+        self.chat_histories = {}
         
-        # Define a consistent system message
         self.system_message = SystemMessage(
-            content="You are a helpful AI assistant specialized in coding and software development."
+            content=Config.SYSTEM_MESSAGE
         )
 
     def _get_or_create_chat_history(self, chat_id):
@@ -22,21 +22,17 @@ class ChatBackend:
             history.add_message(self.system_message)
             self.chat_histories[chat_id] = history
             
-            # Load existing messages from database
             messages = self.db.get_chat_history(chat_id)
             
-            # If there are too many messages, load the summary instead
-            if len(messages) > 10:  # Adjust threshold as needed
-                summary = self._get_or_create_summary(chat_id, messages[:10])
+            if len(messages) > Config.MAX_MESSAGES_BEFORE_SUMMARY:
+                summary = self._get_or_create_summary(chat_id, messages[:Config.MAX_MESSAGES_BEFORE_SUMMARY])
                 history.add_ai_message(f"Previous conversation summary: {summary}")
-                # Add only the most recent messages after summary
-                for msg in messages[-5:]:  # Keep last 5 messages
+                for msg in messages[-Config.RECENT_MESSAGES_AFTER_SUMMARY:]:
                     if msg['role'] == 'user':
                         history.add_user_message(msg['content'])
                     elif msg['role'] == 'assistant':
                         history.add_ai_message(msg['content'])
             else:
-                # Load all messages if under threshold
                 for msg in messages:
                     if msg['role'] == 'user':
                         history.add_user_message(msg['content'])
@@ -111,23 +107,20 @@ class ChatBackend:
 
     def generate_chat_title(self, first_message):
         try:
-            # Use Langchain for title generation with a more structured prompt
             prompt = HumanMessage(
-                content="You are a title generator. Generate a very short, concise title (max 40 chars) for this message. Output only the title, no quotes or explanations: " + first_message
+                content=f"You are a title generator. Generate a very short, concise title (max {Config.MAX_TITLE_LENGTH} chars) for this message. Output only the title, no quotes or explanations: " + first_message
             )
             response = self.model.invoke([prompt])
             
-            # Clean up the response more thoroughly
             title = response.content.strip().strip('"').strip("'").strip()
             
-            # Ensure we have a valid title
-            if not title or len(title) > 40:
-                title = first_message[:37] + "..."
+            if not title or len(title) > Config.MAX_TITLE_LENGTH:
+                title = first_message[:Config.MAX_TITLE_LENGTH-3] + "..."
             
             return title
         except Exception as e:
-            print(f"Title generation error: {str(e)}")  # For debugging
-            return "New Chat"
+            print(f"Title generation error: {str(e)}")
+            return Config.DEFAULT_TITLE
 
     def create_new_chat(self):
         return self.db.create_new_chat()
@@ -143,6 +136,9 @@ class ChatBackend:
 
     def get_recent_chats(self):
         return self.db.get_recent_chats()
+
+    def get_all_chats(self):
+        return self.db.get_all_chats()
 
     def delete_chat(self, chat_id):
         self.db.delete_chat(chat_id)

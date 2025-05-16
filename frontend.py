@@ -11,8 +11,8 @@ def initialize_session_state():
         st.session_state.title_generated = False
 
 def handle_new_chat(chat_backend):
-    recent_chats = chat_backend.get_recent_chats()
-    if len(recent_chats) >= 5:
+    total_chats = len(chat_backend.get_all_chats())  # Get total number of chats
+    if total_chats >= 5:
         chat_backend.delete_oldest_chat()
     
     st.session_state.current_chat_id = chat_backend.create_new_chat()
