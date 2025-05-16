@@ -25,7 +25,19 @@ class DatabaseManager:
                 role TEXT,
                 content TEXT,
                 timestamp TIMESTAMP,
-                FOREIGN KEY (chat_id) REFERENCES chats (id)
+                document_id INTEGER,
+                FOREIGN KEY (chat_id) REFERENCES chats (id),
+                FOREIGN KEY (document_id) REFERENCES documents (id)
+            )
+        ''')
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS documents (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                filename TEXT,
+                content TEXT,
+                embedding_path TEXT,
+                file_type TEXT,
+                uploaded_at TIMESTAMP
             )
         ''')
         self.conn.commit()
@@ -109,3 +121,29 @@ class DatabaseManager:
         oldest_chat = cursor.fetchone()
         if oldest_chat:
             self.delete_chat(oldest_chat[0])
+
+    def save_document(self, filename, content, file_type):
+        cursor = self.conn.cursor()
+        now = datetime.now()
+        cursor.execute(
+            'INSERT INTO documents (filename, content, file_type, uploaded_at) VALUES (?, ?, ?, ?)',
+            (filename, content, file_type, now)
+        )
+        self.conn.commit()
+        return cursor.lastrowid
+
+    def get_document(self, document_id):
+        cursor = self.conn.cursor()
+        cursor.execute('SELECT * FROM documents WHERE id = ?', (document_id,))
+        return cursor.fetchone()
+
+    def save_message_with_document(self, chat_id, role, content, document_id=None):
+        now = datetime.now()
+        self.execute_query(
+            'INSERT INTO messages (chat_id, role, content, timestamp, document_id) VALUES (?, ?, ?, ?, ?)',
+            (chat_id, role, content, now, document_id)
+        )
+        self.execute_query(
+            'UPDATE chats SET last_updated = ? WHERE id = ?',
+            (now, chat_id)
+        )
