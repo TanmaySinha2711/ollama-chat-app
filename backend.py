@@ -76,7 +76,8 @@ class ChatBackend:
             latest_message = messages[-1]['content']
 
             # Add to history (only the user's original message)
-            history.add_user_message(latest_message)
+            # We will add the full AI response to history after streaming is complete
+            # history.add_user_message(latest_message) # Add user message here or in the calling function before streaming starts
 
             # Create prompt template with history and optional document context
             system_message_content = Config.SYSTEM_MESSAGE
@@ -91,17 +92,31 @@ class ChatBackend:
 
             # Get response using the chat model
             chain = prompt | self.model
-            response = chain.invoke({
+
+            # Use stream instead of invoke
+            # This will yield chunks of the response
+            full_response_content = ""
+            for chunk in chain.stream({
                 "chat_history": history.messages[1:],  # Exclude system message
                 "input": latest_message
-            })
+            }):
+                # Each chunk is an AIMessageChunk object
+                # You would typically yield or send this chunk to the frontend
+                # For now, we'll just print it and build the full response
+                full_response_content += chunk.content
+                yield chunk.content # Yield the chunk content to the caller
 
-            # Add response to history
-            history.add_ai_message(response.content)
+            # Add the complete response to history after streaming finishes
+            history.add_ai_message(full_response_content)
+            # You should also save the full_response_content to the database here
+            self.save_message(chat_id, "assistant", full_response_content)
 
-            return response.content
+            # The function now yields chunks, it doesn't return the full response directly
+            # return full_response_content # This line is no longer needed
+
         except Exception as e:
-            return f"Error: {str(e)}"
+            print(f"Error in get_response: {str(e)}")
+            yield f"Error: {str(e)}" # Yield error message
 
     def delete_chat(self, chat_id):
         # Clean up chat history when deleting chat

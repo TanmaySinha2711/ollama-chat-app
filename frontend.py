@@ -86,106 +86,63 @@ def handle_chat_response(prompt, chat_backend):
         "chat_id": st.session_state.current_chat_id
     }
 
-    # Add message to session state with chat_id
+    # Add user message to session state and database immediately
     st.session_state.messages.append(message)
     chat_backend.save_message(st.session_state.current_chat_id, "user", prompt)
 
     # Get document context if available
     doc_context = st.session_state.get('uploaded_doc_text', '')
-    # We will pass doc_context separately, not append to the prompt string here
 
+    # Display user message
     with st.chat_message("user"):
-        st.markdown(prompt) # Display only the original user prompt
+        st.markdown(prompt)
 
+    # Prepare for assistant response streaming
     with st.chat_message("assistant"):
-        with st.spinner("Thinking..."):
-            # Pass messages and doc_context to backend
-            response = chat_backend.get_response([message], doc_context=doc_context)
+        # Use st.empty() to create a container we can update in place
+        message_placeholder = st.empty()
+        full_response = ""
+        
+        # Disable input and show stop button (requires frontend logic outside this function)
+        # For now, we'll just simulate the streaming display
 
-            # Extract code blocks from markdown response
-            code_blocks = re.findall(r'```(\w+)?\n(.*?)```', response, re.DOTALL)
+        try:
+            # Pass messages and doc_context to backend, which now streams
+            # We pass the latest message in a list as expected by the backend function signature
+            for chunk in chat_backend.get_response([message], doc_context=doc_context):
+                full_response += chunk
+                # Update the message container with the current full response
+                message_placeholder.markdown(full_response + "▌") # Add a blinking cursor effect
+            
+            # Remove the cursor after streaming finishes
+            message_placeholder.markdown(full_response)
 
-            # Display response with download buttons for code blocks
-            current_pos = 0
-            for idx, match in enumerate(re.finditer(r'```(\w+)?\n(.*?)```', response, re.DOTALL)):
-                # Display text before code block
-                st.markdown(response[current_pos:match.start()])
+        except Exception as e:
+            full_response = f"Error: {str(e)}"
+            message_placeholder.error(full_response) # Display error in the placeholder
 
-                lang = match.group(1) or 'txt'
-                code = match.group(2)
+        # Add the complete response to session state and database after streaming finishes
+        st.session_state.messages.append({"role": "assistant", "content": full_response})
+        chat_backend.save_message(st.session_state.current_chat_id, "assistant", full_response)
 
-                # Create columns for code block and buttons
-                col1, col2, col3 = st.columns([10, 1, 1])
+        # Re-enable input and hide stop button (requires frontend logic outside this function)
 
-                with col1:
-                    st.code(code, language=lang)
-
-                with col2:
-                    # Simplified copy button without session state
-                    st.button("📋", key=f"copy_{idx}", help="Copy code")
-
-                with col3:
-                    # Get appropriate file extension
-                    extension = {
-                        'python': '.py',
-                        'javascript': '.js',
-                        'typescript': '.ts',
-                        'java': '.java',
-                        'cpp': '.cpp',
-                        'c': '.c',
-                        'csharp': '.cs',
-                        'go': '.go',
-                        'rust': '.rs',
-                        'php': '.php',
-                        'ruby': '.rb',
-                        'swift': '.swift',
-                        'kotlin': '.kt',
-                        'sql': '.sql',
-                        'html': '.html',
-                        'css': '.css',
-                        'json': '.json',
-                        'yaml': '.yml',
-                        'xml': '.xml',
-                        'markdown': '.md',
-                        'shell': '.sh',
-                        'bash': '.sh',
-                        'powershell': '.ps1',
-                        'dockerfile': '.dockerfile',
-                    }.get(lang.lower(), '.txt')
-
-                    # Download button with unique key
-                    st.download_button(
-                        label="⬇️",
-                        data=code,
-                        file_name=f"chat_response{extension}",
-                        mime="text/plain",
-                        key=f"download_{idx}",
-                        help=f"Download as chat_response{extension}"
-                    )
-
-                current_pos = match.end()
-
-            # Display any remaining text after last code block
-            if current_pos < len(response):
-                st.markdown(response[current_pos:])
-
-            st.session_state.messages.append({"role": "assistant", "content": response})
-            chat_backend.save_message(st.session_state.current_chat_id, "assistant", response)
-
-            if not st.session_state.title_generated:
-                title = chat_backend.generate_chat_title(prompt) # Use original prompt for title
-                chat_backend.update_chat_title(st.session_state.current_chat_id, title)
-                st.session_state.title_generated = True
-                st.rerun()
+        # Generate title if it hasn't been generated
+        if not st.session_state.title_generated:
+            # Use the original prompt for title generation
+            title = chat_backend.generate_chat_title(prompt)
+            chat_backend.update_chat_title(st.session_state.current_chat_id, title)
+            st.session_state.title_generated = True
+            # st.rerun() # Avoid rerunning here to prevent interrupting the stream display
 
 def main():
     st.title("Chat with Deepseek Coder")
-    
+
     chat_backend = ChatBackend()
     initialize_session_state()
-    
+
     render_sidebar(chat_backend)
-    
+
     # Add file uploader
     uploaded_file = st.file_uploader("Upload a file", type=['txt', 'pdf', 'doc', 'docx'])
     if uploaded_file is not None:
@@ -211,18 +168,28 @@ def main():
         # Save document info to DB (optional, depending on whether you want to link messages to documents)
         # document_id = chat_backend.save_document(uploaded_file.name, file_content, file_type)
         # st.success(f"File {uploaded_file.name} uploaded successfully!")
-    
+
     if st.session_state.current_chat_id is None:
         st.session_state.current_chat_id = chat_backend.create_new_chat()
         st.session_state.messages = []
         st.session_state.title_generated = False
-    
+
+    # Display existing messages
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
-    
-    if prompt := st.chat_input("What would you like to ask?"):
+
+    # Chat input area
+    # We need to manage the disabled state here based on whether streaming is active
+    # For simplicity in this code block, we'll just add a placeholder comment
+    # You would typically use st.session_state to track if streaming is ongoing
+    prompt = st.chat_input("What would you like to ask?") # Add disabled=st.session_state.streaming_active
+
+    if prompt:
+        # Set a session state flag to indicate streaming is active
+        # st.session_state.streaming_active = True # Add this
         handle_chat_response(prompt, chat_backend)
+        # st.session_state.streaming_active = False # Reset this after streaming finishes
 
 if __name__ == "__main__":
     if not os.path.exists("uploaded_files"):
