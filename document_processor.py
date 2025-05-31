@@ -1,7 +1,7 @@
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyPDFLoader, Docx2txtLoader, TextLoader
-from langchain.embeddings import OllamaEmbeddings
-from langchain.vectorstores import FAISS
+from langchain_community.embeddings import OllamaEmbeddings  # Updated import
+from langchain_community.vectorstores import FAISS  # Updated import
 import os
 
 class DocumentProcessor:
